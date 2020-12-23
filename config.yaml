@@ -1,0 +1,87 @@
+plugin:
+  - tag: main_server    # 启动服务器
+    type: plain_server
+    args:
+      entry: sequence_bypass_local
+      listen:
+        - udp://127.0.0.1:53
+        - tcp://127.0.0.1:53
+        - udp://[::1]:53
+        - tcp://[::1]:53
+
+  - tag: sequence_bypass_local    # 分流路由
+    type: sequence
+    args:
+      exec:
+        - if:
+            - match_ad_domain
+          exec:
+            - _block_nxdomain
+          goto: _end
+
+        - if:
+            - match_non_local_domain
+          exec:
+            - forward_remote
+          goto: _end
+
+        - forward_local
+        - if:
+            - !_qtype_A_AAAA
+            - match_local_domain
+            - match_local_ip
+          goto: _end
+        - forward_remote
+      next: ""
+
+  ################ 匹配器插件 #################
+
+  - tag: match_local_domain   # 匹配本地域名
+    type: domain_matcher
+    args:
+      check_cname: false
+      check_question: true
+      domain:
+        - "./geosite.dat:cn"
+
+  - tag: match_non_local_domain   # 匹配非本地域名
+    type: domain_matcher
+    args:
+      check_cname: false
+      check_question: true
+      domain:
+        - "./geosite.dat:geolocation-!cn"
+
+  - tag: match_local_ip       # 匹配本地 IP
+    type: ip_matcher
+    args:
+      match_client: false
+      match_response: true
+      ip:
+        - "./geoip.dat:cn"
+
+  - tag: match_ad_domain   # 匹配广告域名
+    type: domain_matcher
+    args:
+      check_cname: false
+      check_question: true
+      domain:
+        - "./geosite.dat:category-ads-all"
+
+
+  ################# 功能性插件 ################
+
+  - tag: forward_local # 转发至本地服务器
+    type: forward
+    args:
+      upstream:
+        - addr: https://223.5.5.5/dns-query
+
+  - tag: forward_remote # 转发至远程服务器
+    type: forward
+    args:
+      upstream:
+        - addr: https://1.0.0.1/dns-query
+        - addr: https://doh.dns.sb/dns-query
+        - addr: https://public.dns.iij.jp/dns-query
+        - addr: https://i.233py.com/dns-query
